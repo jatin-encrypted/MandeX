@@ -1,0 +1,45 @@
+# ----------------------------------------------------------------------------
+# OS / IDE
+# ----------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+
+# ----------------------------------------------------------------------------
+# Python / Backend / AI Client
+# ----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+.env
+
+# Database
+gateway.db
+*.sqlite3
+
+# ----------------------------------------------------------------------------
+# Node.js / Frontend
+# ----------------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# Env files (keep them out of version control)
+frontend/.env
+backend/.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
