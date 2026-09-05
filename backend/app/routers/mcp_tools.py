@@ -322,17 +322,6 @@ def checkout(req: CheckoutReq, db: Session = Depends(get_db)):
             # Log that the Razorpay checkout widget should now be launched by the frontend.
             # This happens AFTER the order is created — the AI authorized the purchase,
             # Razorpay now holds an open order, and the frontend widget collects payment.
-            audit_service.log(
-                db,
-                event_type="razorpay_checkout_started",
-                merchant_id=cart.merchant_id,
-                cart_id=cart.cart_id,
-                payload={
-                    "razorpay_order_id": rz_result["razorpay_order_id"],
-                    "amount_paise": rz_result["amount_paise"],
-                    "idempotency_key": cart.idempotency_key,
-                },
-            )
 
             # session_complete — verify order amount and check for captured payment.
             # Returns (payment_status_str, razorpay_payment_id | None, reason).
@@ -360,18 +349,7 @@ def checkout(req: CheckoutReq, db: Session = Depends(get_db)):
             if not decision_db.mandate_check_passed
             else decision_db.policy_check_reason
         )
-        # Log block — Razorpay was never called
-        audit_service.log(
-            db,
-            event_type="policy_decided",
-            merchant_id=cart.merchant_id,
-            cart_id=cart.cart_id,
-            payload={
-                "final_decision": "BLOCK",
-                "blocked_reason": blocked_reason,
-                "razorpay_called": False,
-            },
-        )
+        # Log block — Razorpay was never called (already logged by policy_service/mandate_service)
 
     # Persist receipt
     receipt = DecisionReceipt(
@@ -516,17 +494,6 @@ def razorpay_callback(req: RazorpayCallbackReq, db: Session = Depends(get_db)):
     merchant_id = cart_db.merchant_id if cart_db else "unknown"
 
     if not hmac.compare_digest(expected_signature, req.razorpay_signature):
-        audit_service.log(
-            db,
-            event_type="razorpay_payment_failed",
-            merchant_id=merchant_id,
-            cart_id=req.cart_id,
-            payload={
-                "reason": "Razorpay signature verification failed",
-                "razorpay_order_id": req.razorpay_order_id,
-                "razorpay_payment_id": req.razorpay_payment_id,
-            },
-        )
         raise HTTPException(400, "Razorpay signature verification failed.")
 
     # -----------------------------------------------------------------------
@@ -556,20 +523,8 @@ def razorpay_callback(req: RazorpayCallbackReq, db: Session = Depends(get_db)):
         db.commit()
 
     # -----------------------------------------------------------------------
-    # 4. Audit log
+    # 4. Audit log (Handled separately, but we could log something if needed)
     # -----------------------------------------------------------------------
-    audit_service.log(
-        db,
-        event_type="razorpay_payment_verified",
-        merchant_id=merchant_id,
-        cart_id=req.cart_id,
-        payload={
-            "razorpay_order_id": req.razorpay_order_id,
-            "razorpay_payment_id": req.razorpay_payment_id,
-            "payment_status": "payment_verified",
-            "source": "razorpay_callback_signature_verified",
-        },
-    )
 
     return RazorpayCallbackResponse(
         payment_status="payment_verified",

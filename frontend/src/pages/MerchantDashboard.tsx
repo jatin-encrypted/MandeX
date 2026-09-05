@@ -366,20 +366,15 @@ export default function MerchantDashboard() {
                     // Append 'Z' to force JS to parse it as UTC, fixing the offset issue.
                     const timestampStr = e.timestamp.endsWith('Z') ? e.timestamp : `${e.timestamp}Z`;
                     const utcDate = new Date(timestampStr);
-                    const istParts = new Intl.DateTimeFormat("en-IN", {
+                    const dStr = utcDate.toLocaleString("en-GB", {
                       timeZone: "Asia/Kolkata",
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                      hour12: true,
-                    }).formatToParts(utcDate);
-
-                    const p = (type: string) =>
-                      istParts.find((x) => x.type === type)?.value ?? "";
-                    const istStr = `${p("day")} ${p("month")} ${p("year")}, ${p("hour")}:${p("minute")}:${p("second")} ${p("dayPeriod").toUpperCase()} IST`;
+                      day: "2-digit", month: "short", year: "numeric"
+                    });
+                    const tStr = utcDate.toLocaleString("en-US", {
+                      timeZone: "Asia/Kolkata",
+                      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+                    });
+                    const istStr = `${dStr}, ${tStr} IST`;
 
                     // -----------------------------------------------------------
                     // Event colour — uses existing design tokens:
