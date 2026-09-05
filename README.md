@@ -1,69 +1,101 @@
-# MandeX — AI Commerce Gateway
+# MandeX
 
-> **Razorpay AI Buildathon — Track 01: AI Growth & Agentic Commerce**
+**Razorpay AI Buildathon · Track 01 — AI Growth & Agentic Commerce**
 
-MandeX is a merchant-side infrastructure layer that makes merchants ready for AI buyers. It converts a merchant's commerce data into an AI-readable **Commerce Passport**, exposes it to AI agents through **MCP tools**, and lets those agents discover, decide, and purchase products through **Razorpay** — securely gated by explicit buyer mandates and merchant policies.
+Most online stores are built for people who can read a page, squint at a price, and click "buy." An AI agent can't do that reliably — it can't tell if "₹4,999 onwards" means anything, and it definitely shouldn't be guessing with someone else's money. MandeX is the layer in between: it takes a merchant's catalog and rules, turns them into something an agent can actually reason over, and lets that agent shop and pay through Razorpay — without ever getting more authority than it was given.
 
-**Core Principle:** *"LLM proposes. Deterministic rules authorize. Razorpay executes."*
+The whole system runs on one rule:
 
-Every decision is explainable, every financial action is gated, and every transaction is strictly audited.
+> **The LLM proposes. Deterministic rules authorize. Razorpay executes.**
 
----
-
-## 🎯 The Vision & Core Components
-
-MandeX bridges the gap between autonomous AI shopping agents and traditional merchant stores. It provides:
-
-1. **Commerce Passport:** A standardized, AI-readable profile of a merchant's catalog, inventory, and rules (discounts, margins, return policies).
-2. **MCP Tool Layer:** An interface for AI agents to natively interact with the store (search catalog, build cart, check policy, checkout).
-3. **Dual-Layer Authorization:**
-   - **Buyer Mandate:** A cryptographic authorization (signed via HMAC-SHA256) where a human buyer sets limits (max amount, expiry, categories) for their AI agent.
-   - **Merchant Policy Gate:** A strict, deterministic engine enforcing the merchant's rules (stock availability, minimum margins, max AI discount, manual approval thresholds).
-4. **Razorpay Verification Lifecycle:** Server-side recalculation and HMAC callback verification ensure no price tampering occurs between AI selection and final payment.
-5. **Decision Receipts & Audit Log:** An immutable ledger of every AI action, policy check, and payment attempt for full transparency.
+Nothing gets charged because a model felt confident about it.
 
 ---
 
-## 🚀 Quick Start
+## What's actually in here
 
-### 1. Backend Setup
+An agent talking to MandeX gets five things to work with, and nothing else:
 
-The backend is built with FastAPI, SQLite, and SQLAlchemy.
+| Piece | What it does |
+|---|---|
+| **Commerce Passport** | The merchant's catalog, stock, and rules, structured so an agent can read them without guessing |
+| **MCP tools** | `search_catalog`, `get_product`, `build_cart`, `check_policy`, `checkout` — the only five moves an agent can make |
+| **Buyer Mandate** | An HMAC-signed limit a human sets for their agent — max spend, allowed categories, an expiry. If the mandate doesn't cover it, the agent doesn't buy it |
+| **Policy Gate** | The merchant's own rules — stock, minimum margin, discount ceiling, manual-approval threshold — checked separately from the mandate, not folded into it |
+| **Audit log** | Every check, decision, and payment attempt, written down as it happens, not reconstructed after |
+
+Mandate and Policy are kept as two genuinely separate checks on purpose. An agent can have every right to spend and still get blocked because the merchant's margin rule says no — those are different failures, and the log should say which one actually happened.
+
+---
+
+## How a purchase actually moves through it
+
+Say an agent gets told: *"find me running shoes under ₹6,000."*
+
+1. It calls `search_catalog`, gets back what's actually in stock, picks a match.
+2. `build_cart` locks the selection in and stamps it with an idempotency key, so a retried request can't double-charge anyone.
+3. `check_policy` runs the mandate check, then the policy gate, independently. Either can fail on its own.
+4. If both clear, `checkout` recalculates the total server-side — the price the agent saw is never the price that gets charged without a fresh check — and hands off to Razorpay.
+5. Razorpay confirms the payment via HMAC callback. Only then does the receipt say "verified."
+6. If either check fails, the flow stops before Razorpay is ever called. Not declined — never invoked.
+
+That last part is the whole point of the project. A blocked purchase should be provably blocked, not just told-you-it-was.
+
+```
+FRONTEND (React 19 + TypeScript + Vite + Tailwind)
+  /buyer-demo → DemoBuyerConsole.tsx   (the AI buyer)
+  /dashboard  → Merchant Dashboard      (Firebase Auth)
+        │
+        │ HTTP → localhost:8000
+        ▼
+BACKEND (FastAPI + SQLAlchemy + SQLite)
+  /mcp/search_catalog, /mcp/checkout, etc.
+
+  mandate_service   — HMAC signing, limit + expiry checks
+  policy_service    — stock, margin, discount, approval threshold
+  razorpay_service  — idempotent order creation
+  verification_service — HMAC callback verification
+  audit_service     — append-only event log
+        │
+   ┌────┴─────┐
+Razorpay API   Gemini API
+(test mode)    (buyer intent parsing)
+```
+
+---
+
+## Running it
+
+**Backend** — FastAPI, SQLite, SQLAlchemy.
 
 ```bash
 cd backend
-cp .env.example .env          # Fill in your Razorpay and Gemini API keys
+cp .env.example .env          # fill in your Razorpay and Gemini keys
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Seed Demo Data
-
-Run the seeding script to populate the database with a test merchant, 8 products (shoes & apparel), and a cryptographic demo mandate.
+**Seed demo data** — one merchant, eight products (shoes and apparel), one signed demo mandate.
 
 ```bash
 cd backend
 source venv/bin/activate
 PYTHONPATH=. python seed_demo.py
-# ⚠️ Note the MERCHANT_ID and MANDATE_ID printed at the end of this script!
+# copy the MERCHANT_ID and MANDATE_ID it prints — the frontend needs them
 ```
 
-### 3. Frontend Setup
-
-The frontend is a React 19 + TypeScript + Vite app using TailwindCSS.
+**Frontend** — React 19 + TypeScript + Vite + Tailwind.
 
 ```bash
 cd frontend
-cp .env.example .env          # Fill in Firebase config and the IDs from step 2
+cp .env.example .env          # Firebase config + the IDs from the step above
 npm install
 npm run dev
 ```
 
-### 4. Run Tests
-
-The backend has a comprehensive pytest suite (53/53 passing tests) covering security, intent parsing, mandate cryptography, and Razorpay flows.
+**Tests** — 53/53 passing as of this build. Covers mandate cryptography, policy logic, intent parsing, and the Razorpay flow.
 
 ```bash
 cd backend
@@ -73,76 +105,45 @@ PYTHONPATH=. pytest tests/ -v
 
 ---
 
-## 🕹️ Running the AI Buyer Demo
+## Watching it actually work
 
-The primary interactive demo lives at `http://localhost:5173/buyer-demo`. It executes a simulated agent shopping flow using the seeded data. 
+Open `http://localhost:5173/buyer-demo`. Two scripted paths, same demo mandate (₹6,000 limit):
 
-**Path A: The Happy Path (Approved)**
-1. Prompt: *"Find me running shoes under ₹6,000"*
-2. The AI searches the catalog, picks the best match within budget (e.g., Velocity Pro Running Shoes), and builds a cart.
-3. The cart total passes the buyer's ₹6,000 mandate.
-4. The merchant's stock and margin policies pass.
-5. Razorpay Test Checkout opens. You complete the payment.
-6. A **Verified Decision Receipt** is issued.
+**The happy path.**
+Type *"find me running shoes under ₹6,000."* The agent searches, lands on the Velocity Pro Running Shoes, builds a cart, and both the mandate check and the policy checks pass. Razorpay's test checkout opens, you pay, and a verified receipt comes back.
 
-**Path B: The Blocked Path (Denied by Mandate)**
-1. Prompt: *"Buy the ₹8,999 version instead"*
-2. The AI specifically selects the SprintX Track Spikes.
-3. The cart total exceeds the buyer's ₹6,000 mandate.
-4. The Mandate Check fails immediately.
-5. The checkout flow terminates. **Razorpay is never called.**
-6. A **Blocked Decision Receipt** is issued explaining the limit breach.
+**The blocked path.**
+Type *"buy the ₹8,999 version instead."* The agent picks the SprintX Track Spikes — ₹8,999, over the ₹6,000 mandate. The check fails immediately. Checkout stops there. Razorpay is never called. The receipt explains exactly why, in the same format as an approved one.
 
-*You can view the cryptographic audit trail of both transactions in the "Audit Log" tab of the Merchant Dashboard.*
+Both runs — full cryptographic trail included — show up in the Audit Log tab of the merchant dashboard.
 
 ---
 
-## 🏗️ Architecture & Flow
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│  FRONTEND  (React 19 + TypeScript + Vite + TailwindCSS)    │
-│  /buyer-demo  →  DemoBuyerConsole.tsx (The AI Buyer)       │
-│  /dashboard   →  Merchant Dashboard (Firebase Auth)        │
-└─────────────────────────┬──────────────────────────────────┘
-                          │  HTTP (localhost:8000)
-┌─────────────────────────▼──────────────────────────────────┐
-│  BACKEND  (FastAPI + SQLAlchemy + SQLite)                   │
-│                                                             │
-│  MCP Handlers: /mcp/search_catalog, /mcp/checkout, etc.    │
-│                                                             │
-│  Services:                                                  │
-│   - Mandate Service (HMAC signing & expiry/limit checks)   │
-│   - Policy Service (Stock, margins, discount limits)       │
-│   - Razorpay Service (Idempotent order creation)           │
-│   - Verification Service (HMAC callback verification)      │
-│   - Audit Service (Immutable event ledger)                 │
-└─────────────────────────┬──────────────────────────────────┘
-             ┌────────────┴──────────────┐
-        Razorpay API              Gemini API
-        (Test Mode)               (CLI buyer intent)
-```
-
-### The Model Context Protocol (MCP) Tools
-
-MandeX exposes standard tools that any MCP-compliant agent can use to interact with the merchant:
+## The MCP tools, if you're integrating your own agent
 
 | Tool | Purpose |
 |---|---|
-| `search_catalog` | Discover products across the merchant's active Commerce Passport. |
-| `get_product` | Retrieve exact details and stock for a specific SKU. |
-| `build_cart` | Lock in item selections and generate an idempotency key. |
-| `check_policy` | Run the dual-layer Mandate & Policy check to simulate the decision. |
-| `checkout` | Finalize the decision, recalculate totals server-side, and invoke Razorpay if approved. |
+| `search_catalog` | Search a merchant's active Commerce Passport |
+| `get_product` | Pull stock and details for one SKU |
+| `build_cart` | Lock in a selection, generate the idempotency key |
+| `check_policy` | Run the mandate check and the policy gate, report both |
+| `checkout` | Recalculate server-side, call Razorpay only on approval |
 
-*(Note: The frontend demo hits the FastAPI `/mcp/*` HTTP endpoints directly to seamlessly integrate the UI, while a standalone Python CLI client in `ai_buyer_client/buyer.py` uses the standard stdio MCP server bridge).*
+The frontend demo talks to these directly over HTTP at `/mcp/*` — that's a shortcut for the UI. A real MCP client (`ai_buyer_client/buyer.py`) talks to the same tools over the standard stdio bridge, if you want to point your own agent at it instead of ours.
 
 ---
 
-## 🔒 Security & Constraints
+## Why it's hard to abuse
 
-MandeX is built with strict financial safeguards:
-- **No Price Tampering:** The frontend never dictates the final price. The backend recalculates the total from the authoritative database (`gateway.db`) right before invoking Razorpay.
-- **Server-Side Verification:** `payment_verified` status is strictly gated behind Razorpay's HMAC-SHA256 signature callback verification in the backend.
-- **Razorpay Isolation:** The Razorpay `order.create()` API is physically unreachable in the code if `final_decision == "BLOCK"`.
-- **Cross-Merchant Safety:** Carts are scoped to specific merchant IDs at creation; an agent cannot build a cart for Merchant A and check it out against Merchant B's policy.
+- **The frontend never sets the price.** Whatever it shows is recalculated from the database, server-side, the instant before Razorpay is called. Nothing the client sends is trusted.
+- **"Verified" means Razorpay said so.** `payment_verified` only gets set after the backend checks Razorpay's own HMAC-SHA256 signature on the callback — not because the frontend said the popup closed.
+- **A blocked cart can't reach Razorpay.** Not "we choose not to call it" — the code path to `order.create()` is unreachable once `final_decision` is `BLOCK`.
+- **Carts don't cross merchants.** A cart is scoped to the merchant it was built against at creation. An agent can't build against one store and check out against another.
+
+---
+
+## What this isn't
+
+No ML-driven pricing — the rules engine is deterministic on purpose, because "explainable" was the actual bar, not "impressive." No scraping arbitrary websites — merchants type their catalog in or upload it; there's nothing to infer, so nothing to get wrong. No fully autonomous shopping agent — the buyer console is a demo harness that proves the gateway works, not a general-purpose product. We built the layer that makes a merchant transactable by an AI buyer, not the AI buyer itself.
+
+Field names and structure loosely track what ACP and AP2 are shaping up to look like — checkout as a session, mandate as a signed scope — because building toward where the ecosystem is clearly headed seemed better than inventing something unrecognizable. None of it claims actual compliance with either spec. The mandate signature is a real HMAC check, not a verifiable credential — said plainly, so nobody has to find that out the hard way in a Q&A.
